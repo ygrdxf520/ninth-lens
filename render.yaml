@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: ninth-lens
+    env: docker
+    plan: free
+    region: oregon
+    dockerfile: ./Dockerfile
+    dockerContext: .
+    port: 1241
+    healthCheckPath: /health
+    envVars:
+      - key: AUTH_ENABLED
+        value: "false"
+      - key: TZ
+        value: Asia/Shanghai
+      - key: LOG_LEVEL
+        value: INFO
