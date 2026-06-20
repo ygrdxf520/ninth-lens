@@ -632,5 +632,5 @@ if __name__ == "__main__":
 
     _host, _port = _resolve_listen_addr()
     # PyInstaller 打包后不支持 reload（需要 import string）
-_is_frozen = getattr(sys, 'frozen', False)
-uvicorn.run(app, host=_host, port=_port, reload=not _is_frozen)
+    _is_frozen = getattr(sys, 'frozen', False)
+    uvicorn.run(app, host=_host, port=_port, reload=not _is_frozen)
