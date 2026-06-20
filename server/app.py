@@ -152,40 +152,27 @@ def check_sandbox_available() -> bool:
     """启动期检测 sandbox 工具可用性。
 
     返回 ``True`` 表示沙箱可用且必须启用；返回 ``False`` 表示 SDK 不支持
-    当前平台（目前仅 Windows — sandboxing.md §"Platform support"），server
-    仍可启动但 sandbox 关闭，Bash 工具回退到
-    ``SessionManager._WINDOWS_BASH_PREFIX_WHITELIST`` 代码白名单。
-    macOS / Linux 工具缺失仍硬失败（受支持平台禁止降级）。
+    当前平台或沙箱工具不可用，server 仍可启动但 sandbox 关闭，Bash 工具回退到
+    代码白名单模式。
     """
     system = platform.system()
     if system == "Darwin":
         if shutil.which("sandbox-exec") is None:
-            raise RuntimeError(
-                "SANDBOX_UNAVAILABLE on macOS\n"
-                "  sandbox-exec: not found in PATH (should be system-installed)\n"
-                "Required for ArcReel agent runtime."
+            logger.warning(
+                "SANDBOX_UNAVAILABLE on macOS — server 启动 sandbox=disabled，Bash 工具回退到代码白名单"
             )
+            return False
         return True
     if system == "Linux":
-        # 官方 sandboxing.md 明确 Linux 需要 bubblewrap + socat 一起装
-        # （bwrap 做进程/文件隔离，socat 做网络代理转发）。
+        # 检查 bwrap 和 socat 是否安装
         missing = [name for name in ("bwrap", "socat") if shutil.which(name) is None]
         if missing:
-            raise RuntimeError(
-                "SANDBOX_UNAVAILABLE on linux\n"
-                f"  missing in PATH: {', '.join(missing)}\n"
-                "Required for ArcReel agent runtime. Install:\n"
-                "  Ubuntu/Debian: sudo apt install bubblewrap socat\n"
-                "  Fedora:        sudo dnf install bubblewrap socat\n"
-                "  Arch:          sudo pacman -S bubblewrap socat"
+            logger.warning(
+                "SANDBOX_UNAVAILABLE on linux — missing: %s — server 启动 sandbox=disabled，Bash 工具回退到代码白名单",
+                ", ".join(missing),
             )
-        # bwrap 装了不代表跑得起来。两类常见失败：
-        # 1) 创建 user namespace 被拒：seccomp / apparmor / sysctl 屏蔽
-        #    → "No permissions to create new namespace"
-        # 2) 新 net namespace 内 loopback 配置被拒：容器缺 CAP_NET_ADMIN
-        #    → "loopback: Failed RTM_NEWADDR: Operation not permitted"
-        # 用与 SDK 实际调用接近的 unshare 参数试跑，启动期就拦下来，
-        # 避免 agent 第一次调 Bash 才神秘失败。
+            return False
+        # 试跑 bwrap 检测是否真的能用
         probe_cmd = [
             "bwrap",
             "--unshare-user",
@@ -199,18 +186,18 @@ def check_sandbox_available() -> bool:
         try:
             probe = subprocess.run(probe_cmd, capture_output=True, timeout=5, check=False)
         except (OSError, subprocess.TimeoutExpired) as exc:
-            raise RuntimeError(
-                "SANDBOX_BWRAP_BROKEN on Linux\n"
-                f"  bwrap probe failed to execute: {exc}\n"
-                "Required for ArcReel agent runtime."
-            ) from exc
+            logger.warning(
+                "SANDBOX_BWRAP_BROKEN on Linux — bwrap probe failed: %s — server 启动 sandbox=disabled，Bash 工具回退到代码白名单",
+                exc,
+            )
+            return False
         if probe.returncode != 0:
             stderr = probe.stderr.decode("utf-8", errors="replace").strip() or "(no stderr)"
-            raise RuntimeError(
-                "SANDBOX_BWRAP_BROKEN on Linux\n"
-                f"  bwrap installed but cannot run: {stderr}\n"
-                f"{_diagnose_bwrap_failure()}"
+            logger.warning(
+                "SANDBOX_BWRAP_BROKEN on Linux — bwrap installed but cannot run: %s — server 启动 sandbox=disabled，Bash 工具回退到代码白名单",
+                stderr,
             )
+            return False
         return True
     logger.warning(
         "SANDBOX_UNSUPPORTED on %s — server 启动 sandbox=disabled，Bash 工具回退到代码白名单"
