@@ -12,6 +12,7 @@ node_modules / .venv / .git / .worktrees 等十几万个文件，单核 CPU 50%+
 import asyncio
 import logging
 import os
+import sys
 import platform
 import shutil
 import subprocess
